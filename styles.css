@@ -810,7 +810,16 @@ h3 {
   }
 
   .main-content {
-    padding: 20px 18px 120px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 16px 14px 120px !important;
+  }
+
+  .card,
+  .hero,
+  .grid,
+  .view {
+    max-width: 100% !important;
   }
 }
 
