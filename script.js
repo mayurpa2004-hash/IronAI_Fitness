@@ -1,4 +1,4 @@
-﻿
+
 "use strict";
 
 const DB_NAME = "ironai";
@@ -322,6 +322,12 @@ const updateOfflineStatus = () => {
 const setView = async (viewId) => {
   dom.views.forEach((view) => view.classList.toggle("active", view.id === viewId));
   dom.navLinks.forEach((link) => link.classList.toggle("active", link.dataset.view === viewId));
+  if (viewId === "history") {
+    await renderHistory();
+  }
+  if (viewId === "timeline") {
+    await renderTimeline();
+  }
   const settings = await db.get(STORES.SETTINGS, "settings");
   await db.set(STORES.SETTINGS, { ...settings, key: "settings", lastView: viewId });
 };
@@ -1104,13 +1110,7 @@ const bootstrap = async () => {
   if (settings.currentWorkout?.startTime) {
     dom.resumeModal?.classList.add("open");
   } else {
-    state.workoutStart = Date.now();
-    await db.set(STORES.SETTINGS, {
-      ...settings,
-      key: "settings",
-      currentWorkout: { startTime: state.workoutStart, split: state.split, day: state.day },
-    });
-    startWorkoutTimer();
+    state.workoutStart = null;
   }
 };
 
@@ -1122,8 +1122,18 @@ dom.splitSelect.addEventListener("change", async (event) => {
 });
 
 
-dom.startWorkoutBtn.addEventListener("click", () => {
+dom.startWorkoutBtn.addEventListener("click", async () => {
   setView("lift");
+  if (!state.workoutStart) {
+    state.workoutStart = Date.now();
+    const settings = await db.get(STORES.SETTINGS, "settings");
+    await db.set(STORES.SETTINGS, {
+      ...settings,
+      key: "settings",
+      currentWorkout: { startTime: state.workoutStart, split: state.split, day: state.day },
+    });
+    await updateWorkoutState();
+  }
   startWorkoutTimer();
   showToast("Workout started.");
 });
@@ -1175,16 +1185,18 @@ dom.resumeContinueBtn?.addEventListener("click", () => {
 dom.resumeDiscardBtn?.addEventListener("click", async () => {
   dom.resumeModal.classList.remove("open");
   stopWorkoutTimer();
+  stopRestTimer();
+  state.restRemaining = DEFAULT_REST;
+  dom.restTime.textContent = state.restRemaining;
   const settings = await db.get(STORES.SETTINGS, "settings");
-  state.workoutStart = Date.now();
+  state.workoutStart = null;
   await db.set(STORES.SETTINGS, {
     ...settings,
     key: "settings",
-    currentWorkout: { startTime: state.workoutStart, split: state.split, day: state.day },
+    currentWorkout: null,
   });
-  startWorkoutTimer();
   renderWorkoutDay();
-  showToast("New workout started.");
+  showToast("Workout discarded.");
 });
 
 dom.updateBtn.addEventListener("click", () => {
