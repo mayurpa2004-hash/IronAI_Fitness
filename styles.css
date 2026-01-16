@@ -62,6 +62,49 @@ select {
   gap: 24px;
 }
 
+/* Desktop hover sidebar */
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 240px;
+    transform: translateX(-216px);
+    transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+    z-index: 1000;
+  }
+
+  .sidebar::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: -28px;
+    width: 28px;
+    height: 100%;
+  }
+
+  .sidebar:hover {
+    transform: translateX(0);
+    box-shadow: 8px 0 30px rgba(0, 0, 0, 0.35);
+  }
+
+  .sidebar:focus-within {
+    transform: translateX(0);
+    box-shadow: 8px 0 30px rgba(0, 0, 0, 0.35);
+  }
+
+  .sidebar:hover ~ .main-content {
+    margin-left: 240px;
+    transition: margin-left 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .sidebar:focus-within ~ .main-content {
+    margin-left: 240px;
+    transition: margin-left 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+}
+
 .brand {
   display: flex;
   gap: 12px;
