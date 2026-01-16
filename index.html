@@ -1,0 +1,314 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0e14" />
+    <title>IronAI Fitness</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo">IA</div>
+          <div>
+            <p class="brand-title">IronAI Fitness</p>
+            <p class="brand-sub">Offline Gym Tracker</p>
+          </div>
+        </div>
+        <nav class="nav-list">
+          <button class="nav-link active" data-view="dashboard">Dashboard</button>
+          <button class="nav-link" data-view="lift">Lift</button>
+          <button class="nav-link" data-view="history">History</button>
+          <button class="nav-link" data-view="tools">Tools</button>
+          <button class="nav-link" data-view="timeline">Timeline</button>
+          <button class="nav-link" data-view="settings">Settings</button>
+        </nav>
+        <div class="offline-card">
+          <span id="offlineStatus" class="status-dot"></span>
+          <span id="offlineText">Offline-ready</span>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="top-bar">
+          <div class="xp-box">
+            <span class="level-badge" id="levelBadge">Lv 1</span>
+            <div class="xp-track">
+              <div class="xp-fill" id="xpFill"></div>
+            </div>
+            <span class="xp-text" id="xpText">0 / 1000 XP</span>
+          </div>
+          <div class="workout-timer">
+            <span class="label">Workout</span>
+            <span id="workoutDuration">00:00</span>
+          </div>
+          <button class="primary ghost" id="shareBtn">Share App</button>
+        </header>
+        <div class="mobile-summary">
+          <div>
+            <span class="label">Today</span>
+            <strong id="mobileDaySplit">Mon - Bro Split</strong>
+          </div>
+          <div class="mobile-timer">
+            <span class="label">Workout</span>
+            <strong id="mobileWorkoutDuration">00:00</strong>
+          </div>
+        </div>
+
+        <section class="view active" id="dashboard">
+          <div class="hero">
+            <div>
+              <h1>Crush today.</h1>
+              <p class="muted">No accounts. No cloud. Just you, your iron, and your progress.</p>
+              <div class="hero-actions">
+                <button class="primary" id="startWorkoutBtn">Start Workout</button>
+                <button class="secondary" data-view="lift">Plan Today</button>
+              </div>
+            </div>
+            <div class="hero-panel">
+              <div class="stat">
+                <span>Total Workouts</span>
+                <strong id="totalWorkouts">0</strong>
+              </div>
+              <div class="stat">
+                <span>Current Streak</span>
+                <strong id="workoutStreak">0 days</strong>
+              </div>
+              <div class="stat">
+                <span>User Level</span>
+                <strong id="userLevel">1</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid two">
+            <div class="card">
+              <h3>Weekly Consistency</h3>
+              <canvas id="weeklyChart" height="180"></canvas>
+            </div>
+            <div class="card">
+              <h3>Insights</h3>
+              <ul class="insight-list" id="insightsList">
+                <li>Complete a workout to unlock insights.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="lift">
+          <div class="card split-row">
+            <div>
+              <h2>Workout Plan</h2>
+              <p class="muted">Choose your split and dial in your day.</p>
+            </div>
+            <div class="split-controls">
+              <select id="splitSelect" class="field">
+                <option value="Bro Split">Bro Split</option>
+                <option value="Push / Pull / Legs">Push / Pull / Legs</option>
+                <option value="Upper / Lower">Upper / Lower</option>
+                <option value="Full Body">Full Body</option>
+              </select>
+              <div class="day-tabs" id="dayTabs"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="lift-header">
+              <div>
+                <h3 id="dayTitle">Today</h3>
+                <p class="muted" id="daySummary">Ready to lift.</p>
+              </div>
+              <div class="lift-actions">
+                <button class="primary" id="finishWorkoutBtn">Finish Workout</button>
+                <button class="secondary" id="addExerciseBtn">Add Exercise</button>
+              </div>
+            </div>
+            <div id="exerciseList" class="exercise-list"></div>
+          </div>
+        </section>
+
+        <section class="view" id="history">
+          <div class="card">
+            <div class="history-header">
+              <h2>Workout History</h2>
+              <div class="history-actions">
+                <div class="history-calories">
+                  <span class="label">Today burn</span>
+                  <strong id="historyCalories">--</strong>
+                </div>
+              </div>
+            </div>
+            <div id="historyList" class="history-list"></div>
+          </div>
+        </section>
+
+        <section class="view" id="tools">
+          <div class="grid two">
+            <div class="card">
+              <h3>1RM Calculator</h3>
+              <div class="form-grid">
+                <input class="field" id="rmWeight" type="number" inputmode="numeric" placeholder="Weight (kg)" />
+                <input class="field" id="rmReps" type="number" inputmode="numeric" placeholder="Reps (1-12)" />
+                <button class="primary" id="rmCalcBtn">Calculate</button>
+              </div>
+              <div class="result" id="rmResult">Enter weight and reps.</div>
+            </div>
+            <div class="card">
+              <h3>BMI & Calories</h3>
+              <div class="form-grid">
+                <input class="field" id="bmiWeight" type="number" inputmode="numeric" placeholder="Weight (kg)" />
+                <input class="field" id="bmiHeight" type="number" inputmode="numeric" placeholder="Height (cm)" />
+                <input class="field" id="bmiAge" type="number" inputmode="numeric" placeholder="Age" />
+                <select class="field" id="bmiGoal">
+                  <option>Maintain</option>
+                  <option>Cut</option>
+                  <option>Bulk</option>
+                </select>
+                <button class="primary" id="bmiCalcBtn">Estimate</button>
+              </div>
+              <div class="result" id="bmiResult">Get your baseline.</div>
+            </div>
+          </div>
+          <div class="grid two">
+            <div class="card">
+              <h3>Plate Calculator</h3>
+              <div class="form-grid">
+                <input class="field" id="plateTarget" type="number" inputmode="numeric" placeholder="Target weight (kg)" />
+                <button class="primary" id="plateCalcBtn">Compute Plates</button>
+              </div>
+              <div class="result" id="plateResult">Standard 20kg bar.</div>
+            </div>
+            <div class="card">
+              <h3>AI Coach (Offline)</h3>
+              <div class="form-grid">
+                <input class="field" id="coachWeight" type="number" inputmode="numeric" placeholder="Body weight (kg)" />
+                <select class="field" id="coachGoal">
+                  <option>Cut</option>
+                  <option>Bulk</option>
+                  <option>Recomp</option>
+                </select>
+                <select class="field" id="coachDiet">
+                  <option>Veg</option>
+                  <option>Non-Veg</option>
+                </select>
+                <button class="primary" id="coachBtn">Build Plan</button>
+              </div>
+              <div class="result" id="coachResult">Simple plan, zero internet.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="timeline">
+          <div class="card">
+            <h2>Fitness Timeline</h2>
+            <div class="form-grid">
+              <input class="field" id="timelinePhoto" type="file" accept="image/*" />
+              <input class="field" id="timelineNote" type="text" placeholder="Note" />
+              <button class="primary" id="timelineAddBtn">Add Entry</button>
+            </div>
+            <div class="timeline-grid" id="timelineGrid"></div>
+          </div>
+        </section>
+
+        <section class="view" id="settings">
+          <div class="grid two">
+            <div class="card">
+              <h3>Profile</h3>
+              <div class="form-grid">
+                <input class="field" id="profileName" type="text" placeholder="Username" />
+                <button class="primary" id="profileSaveBtn">Save Profile</button>
+              </div>
+              <p class="muted">Data stays on this device only.</p>
+            </div>
+            <div class="card">
+              <h3>Rest Timer</h3>
+              <div class="form-grid">
+                <input class="field" id="restDuration" type="number" inputmode="numeric" placeholder="Seconds (default 90)" />
+                <button class="primary" id="restSaveBtn">Save Timer</button>
+              </div>
+              <div class="preset-row">
+                <button class="chip" data-rest="60">60s</button>
+                <button class="chip" data-rest="90">90s</button>
+                <button class="chip" data-rest="120">120s</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid two">
+            <div class="card">
+              <h3>Backup</h3>
+              <div class="form-grid">
+                <button class="secondary" id="exportBtn">Export JSON</button>
+                <input class="field" id="importFile" type="file" accept="application/json" />
+                <button class="primary" id="importBtn">Import Backup</button>
+              </div>
+              <p class="muted">Cache version: <span id="cacheVersion">-</span></p>
+            </div>
+            <div class="card danger">
+              <h3>Reset</h3>
+              <p class="muted">This wipes all local data.</p>
+              <button class="danger-btn" id="resetBtn">Reset All Data</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <nav class="bottom-nav">
+      <button class="nav-icon active" data-view="dashboard">Dash</button>
+      <button class="nav-icon" data-view="lift">Lift</button>
+      <button class="nav-icon" data-view="history">History</button>
+      <button class="nav-icon" data-view="tools">Tools</button>
+      <button class="nav-icon" data-view="settings">Settings</button>
+    </nav>
+
+    <div class="rest-timer" id="restTimer">
+      <div class="rest-time" id="restTime">90</div>
+      <div class="rest-actions">
+        <button class="chip" id="restMinus">-10</button>
+        <button class="chip" id="restPlus">+10</button>
+        <button class="chip" id="restStop">Stop</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <div class="confetti" id="confetti"></div>
+    <div class="modal" id="exerciseModal">
+      <div class="modal-content">
+        <h3>Add Exercise</h3>
+        <input class="field" id="exerciseSearch" type="text" placeholder="Search" />
+        <div class="exercise-options" id="exerciseOptions"></div>
+        <input class="field" id="customExercise" type="text" placeholder="Custom exercise" />
+        <button class="primary" id="exerciseAddBtn">Add</button>
+        <button class="secondary" id="exerciseCancelBtn">Cancel</button>
+      </div>
+    </div>
+
+    <div class="modal" id="updateModal">
+      <div class="modal-content">
+        <h3>New version available</h3>
+        <p class="muted">Refresh to update your offline cache.</p>
+        <button class="primary" id="updateBtn">Refresh</button>
+      </div>
+    </div>
+
+    <div class="modal" id="resumeModal">
+      <div class="modal-content">
+        <h3>Resume Workout?</h3>
+        <p class="muted">We found an in-progress session from earlier.</p>
+        <div class="modal-actions">
+          <button class="secondary" id="resumeDiscardBtn">Discard</button>
+          <button class="primary" id="resumeContinueBtn">Resume</button>
+        </div>
+      </div>
+    </div>
+
+
+
+    <script src="assets/chart.min.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
+

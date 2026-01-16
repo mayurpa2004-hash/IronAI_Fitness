@@ -1,0 +1,22 @@
+{
+  "name": "IronAI Fitness",
+  "short_name": "IronAI",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
+  "description": "Offline-first personal gym tracker with no accounts.",
+  "icons": [
+    {
+      "src": "assets/icon-any.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "assets/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
