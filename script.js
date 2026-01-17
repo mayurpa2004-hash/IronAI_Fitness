@@ -12,7 +12,7 @@ const STORES = {
   TIMELINE: "timeline",
 };
 
-const APP_CACHE_VERSION = "ironai-v1";
+const APP_CACHE_VERSION = "ironai-v11";
 
 const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DEFAULT_REST = 90;
@@ -105,6 +105,9 @@ const state = {
   restTimeoutId: null,
   chart: null,
   recentExercises: [],
+  resumePromptOpen: false,
+  awaitingResume: false,
+  pendingElapsedMs: 0,
 };
 
 const db = {
@@ -255,6 +258,8 @@ const dom = {
   resumeModal: document.getElementById("resumeModal"),
   resumeContinueBtn: document.getElementById("resumeContinueBtn"),
   resumeDiscardBtn: document.getElementById("resumeDiscardBtn"),
+  historyDetailModal: document.getElementById("historyDetailModal"),
+  historyDetailContent: document.getElementById("historyDetailContent"),
   cacheVersion: document.getElementById("cacheVersion"),
   mobileDaySplit: document.getElementById("mobileDaySplit"),
   mobileWorkoutDuration: document.getElementById("mobileWorkoutDuration"),
@@ -268,16 +273,23 @@ const formatTime = (seconds) => {
 
 const getTodayKey = () => new Date().toDateString();
 
-const calculateTodayVolume = (workouts) =>
-  workouts
-    .filter((workout) => new Date(workout.date).toDateString() === getTodayKey())
-    .reduce((sum, workout) => sum + (Number(workout.totalVolume) || 0), 0);
+const calculateTodayCalories = (workouts) => {
+  const todayWorkouts = workouts.filter(
+    (workout) => new Date(workout.date).toDateString() === getTodayKey()
+  );
+  const calories = todayWorkouts.reduce((sum, workout) => {
+    const stored = Number(workout.caloriesBurned);
+    if (Number.isFinite(stored)) return sum + stored;
+    const volume = Number(workout.totalVolumeKg ?? workout.totalVolume) || 0;
+    return sum + Math.round(volume * 0.06);
+  }, 0);
+  return { count: todayWorkouts.length, calories };
+};
 
 const updateHistoryCalories = (workouts) => {
   if (!dom.historyCalories) return;
-  const volume = calculateTodayVolume(workouts);
-  const calories = Math.round(volume * 0.06);
-  dom.historyCalories.textContent = volume ? `${calories} kcal` : "--";
+  const { count, calories } = calculateTodayCalories(workouts);
+  dom.historyCalories.textContent = count ? `${calories} kcal` : "--";
 };
 
 const escapeSelector = (value) => {
@@ -376,7 +388,10 @@ const updateWorkoutTimer = () => {
     }
     return;
   }
-  const seconds = Math.floor((Date.now() - state.workoutStart) / 1000);
+  const elapsedMs = state.awaitingResume
+    ? state.pendingElapsedMs
+    : Date.now() - state.workoutStart;
+  const seconds = Math.floor(elapsedMs / 1000);
   dom.workoutDuration.textContent = formatTime(seconds);
   if (dom.mobileWorkoutDuration) {
     dom.mobileWorkoutDuration.textContent = formatTime(seconds);
@@ -385,9 +400,8 @@ const updateWorkoutTimer = () => {
 
 const startWorkoutTimer = () => {
   if (state.workoutTimerId) return;
-  if (!state.workoutStart) {
-    state.workoutStart = Date.now();
-  }
+  if (!state.workoutStart) return;
+  updateWorkoutTimer();
   state.workoutTimerId = setInterval(updateWorkoutTimer, 1000);
 };
 
@@ -396,6 +410,67 @@ const stopWorkoutTimer = () => {
   state.workoutTimerId = null;
   state.workoutStart = null;
   dom.workoutDuration.textContent = "00:00";
+  if (dom.mobileWorkoutDuration) {
+    dom.mobileWorkoutDuration.textContent = "00:00";
+  }
+};
+
+const clearCurrentWorkout = async () => {
+  const settings = await db.get(STORES.SETTINGS, "settings");
+  await db.set(STORES.SETTINGS, { ...settings, key: "settings", currentWorkout: null });
+};
+
+const resumeWorkout = () => {
+  state.resumePromptOpen = false;
+  dom.resumeModal?.classList.remove("open");
+  state.workoutStart = Date.now() - state.pendingElapsedMs;
+  console.log("[workout] resume adjusted startTime", state.workoutStart);
+  void updateCurrentWorkoutStart();
+  state.awaitingResume = false;
+  state.pendingElapsedMs = 0;
+  updateWorkoutTimer();
+  startWorkoutTimer();
+  console.log("[workout] resume");
+};
+
+const resetWorkout = async () => {
+  state.resumePromptOpen = false;
+  dom.resumeModal?.classList.remove("open");
+  state.awaitingResume = false;
+  state.pendingElapsedMs = 0;
+  stopWorkoutTimer();
+  stopRestTimer();
+  state.restRemaining = DEFAULT_REST;
+  dom.restTime.textContent = state.restRemaining;
+  await clearCurrentWorkout();
+  renderWorkoutDay();
+  showToast("Workout discarded.");
+  console.log("[workout] reset");
+};
+
+const openResumePrompt = async () => {
+  if (dom.resumeModal && dom.resumeContinueBtn && dom.resumeDiscardBtn) {
+    state.resumePromptOpen = true;
+    dom.resumeModal.classList.add("open");
+    return;
+  }
+  const resume = confirm("Resume timer?");
+  if (resume) {
+    resumeWorkout();
+  } else {
+    await resetWorkout();
+  }
+};
+
+const updateCurrentWorkoutStart = async () => {
+  const settings = await db.get(STORES.SETTINGS, "settings");
+  const workout = settings?.currentWorkout;
+  if (!workout || !state.workoutStart) return;
+  await db.set(STORES.SETTINGS, {
+    ...settings,
+    key: "settings",
+    currentWorkout: { ...workout, startTime: state.workoutStart },
+  });
 };
 
 const startRestTimer = (seconds) => {
@@ -544,7 +619,6 @@ const renderWorkoutDay = async () => {
 };
 
 const handleSetCompletion = async (card, row) => {
-  startWorkoutTimer();
   const weightInput = row.querySelector(".set-weight");
   const repsInput = row.querySelector(".set-reps");
   const weight = Number(weightInput.value) || 0;
@@ -592,6 +666,7 @@ const focusNextInput = (card) => {
 };
 
 const updateWorkoutState = async () => {
+  if (!state.workoutStart) return;
   const settings = await db.get(STORES.SETTINGS, "settings");
   const exercises = Array.from(dom.exerciseList.querySelectorAll(".exercise-card"));
   const workout = {
@@ -658,28 +733,93 @@ const updateXpUi = (totalXp, level) => {
   dom.xpFill.style.width = `${Math.min(100, (levelXp / 1000) * 100)}%`;
 };
 
-const calculateWorkoutSummary = () => {
-  const exercises = Array.from(dom.exerciseList.querySelectorAll(".exercise-card"));
+const buildWorkoutExercisesFromDom = () => {
+  const cards = Array.from(dom.exerciseList.querySelectorAll(".exercise-card"));
+  return cards.map((card) => {
+    const sets = [];
+    card.querySelectorAll(".set-row").forEach((row) => {
+      const weightValue = row.querySelector(".set-weight").value;
+      const repsValue = row.querySelector(".set-reps").value;
+      const weight = Number(weightValue);
+      const reps = Number(repsValue);
+      sets.push({
+        weight: Number.isFinite(weight) ? weight : null,
+        reps: Number.isFinite(reps) ? reps : null,
+        done: row.querySelector(".set-toggle").classList.contains("done"),
+      });
+    });
+    return {
+      name: card.dataset.exercise,
+      notes: card.querySelector(".exercise-notes")?.value || "",
+      sets,
+    };
+  });
+};
+
+const calculateWorkoutSummary = (exercises) => {
   let totalSets = 0;
   let totalReps = 0;
   let totalVolume = 0;
-  exercises.forEach((card) => {
-    card.querySelectorAll(".set-row").forEach((row) => {
-      const done = row.querySelector(".set-toggle").classList.contains("done");
-      if (!done) return;
+  let exercisesCount = 0;
+  exercises.forEach((exercise) => {
+    let exerciseHasSet = false;
+    (exercise.sets || []).forEach((set) => {
+      const weight = Number(set.weight);
+      const reps = Number(set.reps);
+      if (!Number.isFinite(weight) || weight < 0) return;
+      if (!Number.isFinite(reps) || reps <= 0) return;
+      exerciseHasSet = true;
       totalSets += 1;
-      const weight = Number(row.querySelector(".set-weight").value) || 0;
-      const reps = Number(row.querySelector(".set-reps").value) || 0;
       totalReps += reps;
       totalVolume += weight * reps;
     });
+    if (exerciseHasSet) exercisesCount += 1;
   });
   return {
-    exercisesCount: exercises.length,
+    exercisesCount,
     totalSets,
     totalReps,
     totalVolume,
   };
+};
+
+const calculateWorkoutSummaryFromDom = () => {
+  const exercises = Array.from(dom.exerciseList.querySelectorAll(".exercise-card"));
+  let totalSets = 0;
+  let totalReps = 0;
+  let totalVolume = 0;
+  let exercisesCount = 0;
+  exercises.forEach((card) => {
+    let exerciseHasSet = false;
+    card.querySelectorAll(".set-row").forEach((row) => {
+      const weight = Number(row.querySelector(".set-weight").value);
+      const reps = Number(row.querySelector(".set-reps").value);
+      if (!Number.isFinite(weight) || weight < 0) return;
+      if (!Number.isFinite(reps) || reps <= 0) return;
+      exerciseHasSet = true;
+      totalSets += 1;
+      totalReps += reps;
+      totalVolume += weight * reps;
+    });
+    if (exerciseHasSet) exercisesCount += 1;
+  });
+  return {
+    exercisesCount,
+    totalSets,
+    totalReps,
+    totalVolume,
+  };
+};
+
+const calculateCaloriesBurned = (totalVolumeKg, durationSec) => {
+  const durationMin = Math.max(1, Math.round(durationSec / 60));
+  if (!totalVolumeKg) {
+    return Math.min(1200, Math.max(10, Math.round(durationMin * 2)));
+  }
+  const caloriesFromVolume = totalVolumeKg * 0.035;
+  const caloriesFromTime = durationMin * 3;
+  const calories = Math.round(caloriesFromVolume + caloriesFromTime);
+  return Math.min(1200, Math.max(10, calories));
 };
 
 const finishWorkout = async () => {
@@ -687,9 +827,12 @@ const finishWorkout = async () => {
     showToast("No workout in progress.");
     return;
   }
-  const summary = calculateWorkoutSummary();
+  const exercises = buildWorkoutExercisesFromDom();
+  const summary = calculateWorkoutSummaryFromDom();
   const endTime = Date.now();
-  const duration = Math.ceil((endTime - state.workoutStart) / 60000);
+  const durationSec = Math.max(1, Math.floor((endTime - state.workoutStart) / 1000));
+  const duration = Math.max(1, Math.ceil(durationSec / 60));
+  const caloriesBurned = calculateCaloriesBurned(summary.totalVolume, durationSec);
   await applyXp(100);
   const workout = {
     id: `w_${Date.now()}`,
@@ -698,19 +841,23 @@ const finishWorkout = async () => {
     split: state.split,
     startTime: state.workoutStart,
     endTime,
+    durationSec,
     duration,
     xp: 100 + summary.totalSets * 10,
     exercisesCount: summary.exercisesCount,
     totalSets: summary.totalSets,
     totalReps: summary.totalReps,
     totalVolume: summary.totalVolume,
+    totalVolumeKg: summary.totalVolume,
+    caloriesBurned,
+    exercises,
   };
   await db.set(STORES.WORKOUTS, workout);
-  const settings = await db.get(STORES.SETTINGS, "settings");
-  await db.set(STORES.SETTINGS, { ...settings, key: "settings", currentWorkout: null });
+  await clearCurrentWorkout();
   stopWorkoutTimer();
   blastConfetti();
   showToast("Workout complete!");
+  console.log("[workout] finish cleared");
   await refreshDashboard();
   await renderHistory();
 };
@@ -773,11 +920,225 @@ const renderInsights = (workouts) => {
     return;
   }
   const last = workouts[workouts.length - 1];
+  const lastVolume = last.totalVolumeKg ?? last.totalVolume ?? 0;
   dom.insightsList.innerHTML = `
     <li>Last workout: ${last.duration} min  -  ${last.totalSets} sets</li>
-    <li>Total volume: ${last.totalVolume} kg</li>
+    <li>Total volume: ${lastVolume} kg</li>
     <li>XP earned: ${last.xp}</li>
   `;
+};
+
+const promptNumber = (label, currentValue) => {
+  const input = prompt(`${label}`, String(currentValue ?? 0));
+  if (input === null) return null;
+  const value = Number(input);
+  if (Number.isNaN(value)) {
+    showToast("Enter a valid number.");
+    return null;
+  }
+  return value;
+};
+
+const getWorkoutCalories = (workout) => {
+  if (Number.isFinite(workout.caloriesBurned)) return workout.caloriesBurned;
+  const volume = Number(workout.totalVolumeKg ?? workout.totalVolume) || 0;
+  const durationSec = Number(workout.durationSec) || Number(workout.duration || 0) * 60;
+  return calculateCaloriesBurned(volume, durationSec);
+};
+
+const renderHistoryDetailView = (workout) => {
+  if (!dom.historyDetailModal || !dom.historyDetailContent) return;
+  const calories = getWorkoutCalories(workout);
+  const volume = Number(workout.totalVolumeKg ?? workout.totalVolume) || 0;
+  const durationMin = Number(workout.duration) || Math.round((workout.durationSec || 0) / 60);
+  const exercises = Array.isArray(workout.exercises) ? workout.exercises : [];
+  const exerciseBlocks = exercises
+    .map((exercise) => {
+      const sets = (exercise.sets || [])
+        .filter((set) => Number.isFinite(set.reps) && set.reps > 0 && Number.isFinite(set.weight) && set.weight >= 0)
+        .map((set) => `<div class="history-set">${set.weight}kg x ${set.reps}</div>`)
+        .join("");
+      const notes = exercise.notes ? `<div class="history-notes">${exercise.notes}</div>` : "";
+      return `
+        <div class="history-exercise">
+          <strong>${exercise.name}</strong>
+          ${notes}
+          <div class="history-sets">
+            ${sets || '<div class="muted">No sets recorded.</div>'}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+  dom.historyDetailContent.innerHTML = `
+    <div class="history-detail-header">
+      <div>
+        <h3>${new Date(workout.date).toLocaleDateString()}</h3>
+        <div class="muted">${workout.day || "--"}  -  ${workout.split || "--"}</div>
+      </div>
+      <div class="history-detail-actions">
+        <button class="chip" id="historyDetailEdit" type="button">Edit</button>
+        <button class="chip" id="historyDetailClose" type="button">Close</button>
+      </div>
+    </div>
+    <div class="history-detail-meta">
+      <span>Duration: ${durationMin || 0} min</span>
+      <span>Calories: ${calories} kcal</span>
+      <span>Volume: ${volume} kg</span>
+    </div>
+    <div class="history-detail-body">
+      ${exerciseBlocks || '<div class="muted">No exercises recorded.</div>'}
+    </div>
+  `;
+  dom.historyDetailModal.classList.add("open");
+  dom.historyDetailContent
+    .querySelector("#historyDetailEdit")
+    ?.addEventListener("click", () => renderHistoryDetailEdit(workout));
+  dom.historyDetailContent
+    .querySelector("#historyDetailClose")
+    ?.addEventListener("click", closeHistoryDetail);
+};
+
+const readExerciseEdits = () => {
+  const exercises = [];
+  dom.historyDetailContent.querySelectorAll(".history-exercise-edit").forEach((exerciseEl) => {
+    const name = exerciseEl.dataset.exerciseName || "";
+    const notes = exerciseEl.querySelector(".history-edit-notes")?.value || "";
+    const sets = [];
+    exerciseEl.querySelectorAll(".history-set-edit").forEach((setEl) => {
+      const weightValue = setEl.querySelector(".history-edit-weight")?.value;
+      const repsValue = setEl.querySelector(".history-edit-reps")?.value;
+      const weight = Number(weightValue);
+      const reps = Number(repsValue);
+      sets.push({
+        weight: Number.isFinite(weight) ? weight : null,
+        reps: Number.isFinite(reps) ? reps : null,
+      });
+    });
+    exercises.push({ name, notes, sets });
+  });
+  return exercises;
+};
+
+const renderHistoryDetailEdit = (workout) => {
+  if (!dom.historyDetailModal || !dom.historyDetailContent) return;
+  const exercises = Array.isArray(workout.exercises) ? workout.exercises : [];
+  const durationMin = Number(workout.duration) || Math.round((workout.durationSec || 0) / 60);
+  const exerciseBlocks = exercises
+    .map((exercise) => {
+      const rawSets = exercise.sets && exercise.sets.length ? exercise.sets : [{ weight: null, reps: null }];
+      const sets = rawSets
+        .map(
+          (set, setIndex) => `
+        <div class="history-set-edit">
+          <input
+            class="field history-edit-weight"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            step="0.5"
+            value="${set.weight ?? ""}"
+            aria-label="Set ${setIndex + 1} weight"
+          />
+          <input
+            class="field history-edit-reps"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            step="1"
+            value="${set.reps ?? ""}"
+            aria-label="Set ${setIndex + 1} reps"
+          />
+        </div>`
+        )
+        .join("");
+      return `
+        <div class="history-exercise history-exercise-edit" data-exercise-name="${exercise.name}">
+          <strong>${exercise.name}</strong>
+          <textarea class="field history-edit-notes" rows="2" placeholder="Notes">${exercise.notes || ""}</textarea>
+          <div class="history-sets">${sets}</div>
+        </div>
+      `;
+    })
+    .join("");
+  dom.historyDetailContent.innerHTML = `
+    <div class="history-detail-header">
+      <div>
+        <h3>Edit ${new Date(workout.date).toLocaleDateString()}</h3>
+        <div class="muted">${workout.day || "--"}  -  ${workout.split || "--"}</div>
+      </div>
+      <div class="history-detail-actions">
+        <button class="chip" id="historyDetailCancel" type="button">Cancel</button>
+        <button class="primary" id="historyDetailSave" type="button">Save</button>
+      </div>
+    </div>
+    <div class="history-detail-meta">
+      <label class="history-edit-row">
+        <span>Duration (min)</span>
+        <input class="field history-edit-duration" type="number" inputmode="numeric" min="1" step="1" value="${durationMin}" />
+      </label>
+      <label class="history-edit-row">
+        <span>XP</span>
+        <input class="field history-edit-xp" type="number" inputmode="numeric" min="0" step="1" value="${workout.xp ?? 0}" />
+      </label>
+    </div>
+    <div class="history-detail-body">
+      ${exerciseBlocks || '<div class="muted">No exercises recorded.</div>'}
+    </div>
+  `;
+  dom.historyDetailModal.classList.add("open");
+  dom.historyDetailContent
+    .querySelector("#historyDetailCancel")
+    ?.addEventListener("click", () => renderHistoryDetailView(workout));
+  dom.historyDetailContent
+    .querySelector("#historyDetailSave")
+    ?.addEventListener("click", async () => {
+      const exercisesUpdated = readExerciseEdits();
+      const durationInput = dom.historyDetailContent.querySelector(".history-edit-duration");
+      const xpInput = dom.historyDetailContent.querySelector(".history-edit-xp");
+      const duration = Number(durationInput?.value);
+      const durationSec = Math.max(1, Math.round((Number.isFinite(duration) ? duration : 1) * 60));
+      const summary = calculateWorkoutSummary(exercisesUpdated);
+      const caloriesBurned = calculateCaloriesBurned(summary.totalVolume, durationSec);
+      const updated = {
+        ...workout,
+        duration: Math.max(1, Math.round(durationSec / 60)),
+        durationSec,
+        xp: Math.max(0, Number(xpInput?.value) || 0),
+        exercisesCount: summary.exercisesCount,
+        totalSets: summary.totalSets,
+        totalReps: summary.totalReps,
+        totalVolume: summary.totalVolume,
+        totalVolumeKg: summary.totalVolume,
+        caloriesBurned,
+        exercises: exercisesUpdated,
+      };
+      await db.set(STORES.WORKOUTS, updated);
+      showToast("Workout updated.");
+      await refreshDashboard();
+      await renderHistory();
+      renderHistoryDetailView(updated);
+    });
+};
+
+const openHistoryDetail = (workout) => {
+  renderHistoryDetailView(workout);
+};
+
+const closeHistoryDetail = () => {
+  dom.historyDetailModal?.classList.remove("open");
+};
+
+const editWorkoutEntry = async (workout) => {
+  renderHistoryDetailEdit(workout);
+};
+
+const deleteWorkoutEntry = async (workout) => {
+  if (!confirm("Delete this workout?")) return;
+  await db.delete(STORES.WORKOUTS, workout.id);
+  showToast("Workout deleted.");
+  await refreshDashboard();
+  await renderHistory();
 };
 
 const renderHistory = async () => {
@@ -787,10 +1148,29 @@ const renderHistory = async () => {
     const item = document.createElement("div");
     item.className = "history-item";
     item.innerHTML = `
-      <strong>${new Date(workout.date).toLocaleDateString()}</strong>
+      <div class="history-item-header">
+        <strong>${new Date(workout.date).toLocaleDateString()}</strong>
+        <div class="history-entry-actions">
+          <button class="chip danger history-delete" type="button" aria-label="Delete workout">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="history-delete-icon">
+              <path
+                d="M8 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1h4v2h-2l-1.2 12.2a2 2 0 0 1-2 1.8H9.2a2 2 0 0 1-2-1.8L6 8H4V6h4zm2 0h4V5h-4v1zm0 5v7h2v-7h-2zm4 0v7h2v-7h-2z"
+              />
+            </svg>
+            <span class="history-delete-text">Delete</span>
+          </button>
+        </div>
+      </div>
       <span class="muted">${workout.day}  -  ${workout.duration} min  -  ${workout.xp} XP</span>
-      <span class="muted">${workout.exercisesCount} exercises  -  ${workout.totalSets} sets  -  ${workout.totalVolume} kg</span>
+      <span class="muted">${workout.exercisesCount} exercises  -  ${workout.totalSets} sets  -  ${
+      workout.totalVolumeKg ?? workout.totalVolume
+    } kg</span>
     `;
+    item.addEventListener("click", () => openHistoryDetail(workout));
+    item.querySelector(".history-delete").addEventListener("click", (event) => {
+      event.stopPropagation();
+      void deleteWorkoutEntry(workout);
+    });
     dom.historyList.appendChild(item);
   });
   updateHistoryCalories(workouts);
@@ -1091,6 +1471,7 @@ const bootstrap = async () => {
   state.restDuration = settings.restDuration || DEFAULT_REST;
   state.recentExercises = settings.recentExercises || [];
   state.workoutStart = settings.currentWorkout?.startTime || null;
+  console.log("[workout] load currentWorkout", settings.currentWorkout);
   syncCacheVersion();
 
   const profile = (await db.get(STORES.PROFILE, "profile")) || {
@@ -1116,17 +1497,20 @@ const bootstrap = async () => {
   }
 
   if (settings.currentWorkout?.startTime) {
-    state.workoutStart = settings.currentWorkout.startTime;
+    const storedStartTime = settings.currentWorkout.startTime;
+    console.log("[workout] storedStartTime", storedStartTime);
+    state.pendingElapsedMs = Date.now() - storedStartTime;
+    state.awaitingResume = true;
+    console.log("[workout] pausedElapsedMs", state.pendingElapsedMs);
+    updateWorkoutTimer();
+    await openResumePrompt();
   } else {
-    state.workoutStart = Date.now();
-    await db.set(STORES.SETTINGS, {
-      ...settings,
-      key: "settings",
-      currentWorkout: { startTime: state.workoutStart, split: state.split, day: state.day },
-    });
+    state.workoutStart = null;
+    state.awaitingResume = false;
+    state.pendingElapsedMs = 0;
+    updateWorkoutTimer();
+    dom.resumeModal?.classList.remove("open");
   }
-  dom.resumeModal?.classList.remove("open");
-  startWorkoutTimer();
 };
 
 dom.splitSelect.addEventListener("change", async (event) => {
@@ -1139,8 +1523,14 @@ dom.splitSelect.addEventListener("change", async (event) => {
 
 dom.startWorkoutBtn.addEventListener("click", async () => {
   setView("lift");
-  if (!state.workoutStart) {
-    state.workoutStart = Date.now();
+  if (state.workoutStart) return;
+  state.awaitingResume = false;
+  state.pendingElapsedMs = 0;
+  state.workoutStart = Date.now();
+  console.log("[workout] start", state.workoutStart);
+  startWorkoutTimer();
+  showToast("Workout started.");
+  try {
     const settings = await db.get(STORES.SETTINGS, "settings");
     await db.set(STORES.SETTINGS, {
       ...settings,
@@ -1148,9 +1538,9 @@ dom.startWorkoutBtn.addEventListener("click", async () => {
       currentWorkout: { startTime: state.workoutStart, split: state.split, day: state.day },
     });
     await updateWorkoutState();
+  } catch (error) {
+    console.error("[workout] failed to persist start", error);
   }
-  startWorkoutTimer();
-  showToast("Workout started.");
 });
 
 dom.finishWorkoutBtn.addEventListener("click", finishWorkout);
@@ -1192,38 +1582,24 @@ dom.shareBtn.addEventListener("click", async () => {
   }
 });
 
-dom.resumeContinueBtn?.addEventListener("click", () => {
-  dom.resumeModal.classList.remove("open");
-  startWorkoutTimer();
-});
+dom.resumeContinueBtn?.addEventListener("click", resumeWorkout);
 
 dom.resumeDiscardBtn?.addEventListener("click", async () => {
-  dom.resumeModal.classList.remove("open");
-  stopWorkoutTimer();
-  stopRestTimer();
-  state.restRemaining = DEFAULT_REST;
-  dom.restTime.textContent = state.restRemaining;
-  const settings = await db.get(STORES.SETTINGS, "settings");
-  state.workoutStart = null;
-  await db.set(STORES.SETTINGS, {
-    ...settings,
-    key: "settings",
-    currentWorkout: null,
-  });
-  renderWorkoutDay();
-  showToast("Workout discarded.");
+  await resetWorkout();
 });
 
 dom.updateBtn.addEventListener("click", () => {
   window.location.reload();
 });
 
+dom.historyDetailModal?.addEventListener("click", (event) => {
+  if (event.target === dom.historyDetailModal) {
+    closeHistoryDetail();
+  }
+});
+
 window.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    if (state.workoutTimerId) {
-      clearInterval(state.workoutTimerId);
-      state.workoutTimerId = null;
-    }
     if (state.restTimerId) {
       clearInterval(state.restTimerId);
       state.restTimerId = null;
@@ -1237,7 +1613,8 @@ window.addEventListener("visibilitychange", () => {
       }, Math.max(0, state.restRemaining * 1000));
     }
   } else {
-    if (state.workoutStart && !state.workoutTimerId) {
+    updateWorkoutTimer();
+    if (state.workoutStart && !state.workoutTimerId && !state.resumePromptOpen) {
       startWorkoutTimer();
     }
     if (state.restDueAt) {
@@ -1271,6 +1648,10 @@ setupSettings();
 updateOfflineStatus();
 registerServiceWorker();
 bootstrap();
+
+
+
+
 
 
 
