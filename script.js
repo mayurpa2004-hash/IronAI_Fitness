@@ -83,7 +83,15 @@ const splitTemplates = {
     Sat: [],
     Sun: [],
   },
-};
+  "Default": {
+    Mon: ["Bench Press", "Incline DB Press", "Tricep Pushdown"],
+    Tue: ["Deadlift", "Barbell Row", "Lat Pulldown", "Barbell Curl"],
+    Wed: ["Squat", "Leg Press", "Overhead Press", "Lateral Raise"],
+    Thu: ["Bench Press", "Incline DB Press", "Tricep Pushdown"],
+    Fri: ["Deadlift", "Barbell Row", "Lat Pulldown", "Barbell Curl"],
+    Sat: ["Squat", "Leg Press", "Overhead Press", "Lateral Raise"],
+    Sun: [],
+  },};
 
 const state = {
   split: "Bro Split",
@@ -1108,10 +1116,17 @@ const bootstrap = async () => {
   }
 
   if (settings.currentWorkout?.startTime) {
-    dom.resumeModal?.classList.add("open");
+    state.workoutStart = settings.currentWorkout.startTime;
   } else {
-    state.workoutStart = null;
+    state.workoutStart = Date.now();
+    await db.set(STORES.SETTINGS, {
+      ...settings,
+      key: "settings",
+      currentWorkout: { startTime: state.workoutStart, split: state.split, day: state.day },
+    });
   }
+  dom.resumeModal?.classList.remove("open");
+  startWorkoutTimer();
 };
 
 dom.splitSelect.addEventListener("change", async (event) => {
@@ -1256,6 +1271,9 @@ setupSettings();
 updateOfflineStatus();
 registerServiceWorker();
 bootstrap();
+
+
+
 
 
 
