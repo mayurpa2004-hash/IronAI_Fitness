@@ -492,6 +492,100 @@ h3 {
   animation: riseIn 0.35s ease both;
 }
 
+.history-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-entry-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.history-entry-actions .chip {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.history-entry-actions .chip.danger {
+  background: rgba(255, 77, 94, 0.12);
+  border-color: rgba(255, 77, 94, 0.3);
+}
+
+.history-delete-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.history-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.history-detail-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.history-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  color: var(--muted);
+}
+
+.history-edit-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-edit-row .field {
+  max-width: 120px;
+}
+
+.history-detail-body {
+  display: grid;
+  gap: 12px;
+}
+
+.history-exercise {
+  background: var(--bg-soft);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.history-sets {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.history-set-edit {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.history-edit-notes {
+  resize: vertical;
+}
+
+.history-notes {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .timeline-grid {
   display: grid;
   gap: 12px;
@@ -894,6 +988,31 @@ h3 {
   .grid,
   .view {
     max-width: 100% !important;
+  }
+
+  .history-entry-actions .history-view,
+  .history-entry-actions .history-edit {
+    display: none;
+  }
+
+  .history-entry-actions {
+    gap: 6px;
+  }
+
+  .history-entry-actions .history-delete {
+    min-width: 40px;
+    min-height: 40px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .history-delete-text {
+    display: none;
   }
 }
 
