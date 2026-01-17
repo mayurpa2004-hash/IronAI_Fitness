@@ -1,4 +1,4 @@
-const CACHE_VERSION = "ironai-v8";
+const CACHE_VERSION = "ironai-v11";
 const ASSETS = [
   ".",
   "index.html",
